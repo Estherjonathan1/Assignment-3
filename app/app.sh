@@ -105,3 +105,4 @@ case "$COMMAND" in
     exit 2
     ;;
 esac
+if [[ true
