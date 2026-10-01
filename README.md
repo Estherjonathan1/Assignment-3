@@ -1,71 +1,108 @@
-# Assignment 3 - CI/CD with GitHub Actions
+# Assignment 3 — CI/CD with GitHub Actions
 
-A local CI pipeline for a Bash application. It validates the code, runs tests, and builds/smoke-tests a Docker image. There is no cloud deployment.
+A Bash diagnostic CLI (`app/app.sh`) with a full local CI/CD pipeline built using GitHub Actions. The pipeline validates the code, runs automated tests, and builds and smoke-tests a Docker image on every push and pull request. No cloud deployment is involved.
+
+## Project Structure
+
+```text
+assignment-3/
+├── README.md
+├── app/
+│   └── app.sh              # The application
+├── scripts/
+│   ├── lint.sh             # File checks + bash -n syntax checks
+│   └── build.sh            # Docker build + smoke tests
+├── tests/
+│   └── test.sh             # Automated test suite
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # GitHub Actions pipeline
+├── Dockerfile
+├── compose.yaml
+├── .dockerignore
+└── grade.sh                # Local grading script
+```
 
 ## Requirements
 
+- Linux environment (developed on Ubuntu under WSL)
 - Bash
-- Docker
-- Docker Compose
+- Docker (for the build and smoke tests)
 - Git
 
 ## Setup
 
-    git clone <your-repository-url>
-    cd <repository>
-    chmod +x app/*.sh scripts/*.sh tests/*.sh
+```bash
+git clone https://github.com/Estherjonathan1/Assignment-3.git
+cd Assignment-3
+chmod +x grade.sh app/*.sh scripts/*.sh tests/*.sh
+```
 
 ## Usage
 
-    ./app/app.sh system-info
-    ./app/app.sh check-host <host>
-    ./app/app.sh check-port <host> <port>
-    ./app/app.sh help
+```bash
+./app/app.sh system-info                # Display system information
+./app/app.sh check-host <host>          # Resolve/check a host
+./app/app.sh check-port <host> <port>   # Validate port and check TCP connectivity
+./app/app.sh help                       # Display usage
+```
 
-## Exit codes
+### Exit codes
 
-| Exit code | Meaning |
-|-----------|---------|
-| 0 | Success |
-| 1 | Operational/runtime failure |
-| 2 | Invalid command or input |
+| Code | Meaning                                     |
+|------|---------------------------------------------|
+| 0    | Success                                     |
+| 1    | Operational failure (e.g. host unreachable) |
+| 2    | Invalid command or input                    |
 
-## Docker
-
-    docker build -t devops-tool .
-    docker run --rm devops-tool help
-    docker run --rm devops-tool system-info
-
-Or with Docker Compose:
-
-    docker compose run --rm devops-tool help
+Valid ports are 1–65535. Invalid commands, missing arguments, non-numeric ports and out-of-range ports return exit code 2.
 
 ## Testing
 
-Run the grading script:
+```bash
+./scripts/lint.sh     # Checks required files exist and runs bash -n on all scripts
+./tests/test.sh       # Runs the test suite
+./scripts/build.sh    # Builds the Docker image and runs smoke tests
+./grade.sh            # Runs the full local grader
+```
 
-    ./grade.sh
+The test suite covers: help, system-info, invalid commands, missing host, a valid host, missing port, non-numeric port, and out-of-range ports.
 
-Or the individual pieces:
+## Docker
 
-    ./scripts/lint.sh    # checks required files and Bash syntax
-    ./tests/test.sh      # 8 tests against app.sh
-    ./scripts/build.sh   # builds the image and smoke-tests it
+```bash
+docker build -t devops-tool .
+docker run --rm devops-tool help
+docker run --rm devops-tool system-info
+docker run --rm devops-tool invalid-command   # should exit non-zero
+```
 
-## GitHub Actions
+## CI/CD Pipeline
 
-`.github/workflows/ci.yml` runs on every `push` and `pull_request`, with three jobs in order:
+The workflow in `.github/workflows/ci.yml` runs on every `push` and `pull_request`, with three jobs in order:
 
-    validate -> test -> docker
+```text
+validate  →  test  →  docker
+```
 
-Each later job uses `needs:` so it only runs if the one before it succeeds.
+1. **validate** runs `scripts/lint.sh`.
+2. **test** runs `tests/test.sh`. It only starts after `validate` succeeds (`needs: validate`).
+3. **docker** runs `scripts/build.sh` to build the image and smoke-test it. It only starts after `test` succeeds (`needs: test`).
 
-## CI failure demonstration
+## CI Failure Demonstration
 
-A branch was created with a deliberate syntax error, pushed to show the `validate` job failing, then fixed and pushed again to show the workflow passing. See the repository's Actions tab and pull request history for this run.
+To show that the pipeline catches problems, I created a branch, introduced a deliberate error, and pushed it. All runs are listed at https://github.com/Estherjonathan1/Assignment-3/actions
+
+- **Branch:** `ci-failure-demo`
+- **Error introduced:** a deliberate syntax error (commit `e794e5c`)
+- **Result:** CI run #3 failed at the `validate` job, so `test` and `docker` did not run.
+- **Fix:** removed the syntax error (commit `7d32812`); CI run #4 then passed with all three jobs green.
+
+The branch was merged into `main`, and the final workflow on `main` passes.
 
 ## Assumptions
 
-- The base image is Alpine Linux 3.20, with `bash`, `iputils` (for `ping`) and `procps` installed.
-- An unknown command, or invalid host/port input, is treated as invalid input (exit code 2).
-- Network checks may fail in restricted environments that block outbound connections.
+- The scripts run on Linux and do not depend on machine-specific paths or values.
+- Docker is installed and the Docker daemon is running when building or running the image.
+- Network checks may fail in environments without internet access; this is reported as exit code 1, not a crash.
+- No secrets, tokens or keys are stored in the repository.
